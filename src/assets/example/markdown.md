@@ -1,107 +1,302 @@
-# 示例文章：Google 搜索的即时自动补全功能究竟是如何“工作”的？
+# Dockerfile 的最佳实践 ｜ Dockerfile 你写的都对么？
 
-> Google 搜索**自动补全功能**的强大，相信不少朋友都能感受到，它帮助我们更快地“补全”我们所要输入的搜索关键字。那么，它怎么知道我们要输入什么内容？它又是如何工作的？在这篇文章里，我们一起来看看。
+随着应用的容器化、上云后，将伴随着 Docker 镜像的构建，构建 Docker 镜像成为了最基本的一步，其中 Dockerfile 便是用来构建镜像的一种文本文件，镜像的优劣全靠 Dockerfile 编写的是否合理、合规。本文将讲述编写 Dockerfile 的一些最佳实践和技巧，让我们的镜像更小、更优。
 
-## 使用自动补全
+## 1、Docker 镜像是如何工作的
 
-Google 搜索的自动补全功能可以在 Google 搜索应用的大多数位置使用，包括 [Google](https://www.google.com/) 主页、适用于 IOS 和 Android 的 Google 应用，我们只需要在 Google 搜索框上开始键入关键字，就可以看到联想词了。
+首先，我们一起回顾下 Docker 镜像的相关概念及工作流程吧。
 
-![](https://cdn-doocs.oss-cn-shenzhen.aliyuncs.com/gh/doocs/md/images/1648303019705-c161ce00-d245-446a-b81c-42ec91474a40.gif)
+### 1.1 镜像
 
-在上图示例中，我们可以看到，输入关键字 `juej`，Google 搜索会联想到“掘金”、“掘金小册”、“绝句”等等，好处就是，我们无须输入完整的关键字即可轻松完成针对这些 topics 的搜索。
+镜像（image）是一堆只读层（read-only layer）的统一视角，也许这个定义有些难以理解，下面的这张图能够帮助您理解镜像的定义。
 
-谷歌搜索的自动补全功能对于使用移动设备的用户来说特别有用，用户可以轻松在难以键入的小屏幕上完成搜索。当然，对于移动设备用户和台式机用户而言，这都节省了大量的时间。根据 Google 官方报告，自动补全功能可以减少大约 25% 的打字，累积起来，预计每天可以节省 200 多年的打字时间。是的，每天！
+![镜像层结构](https://xcbeyond.cn/blog/containers/dockerfile-best-practices/docker-image-layer.png)
 
-> 注意，本文所提到的“**联想词**”与“**预测**”，是同一个意思。
+从左边我们看到了多个只读层，它们重叠在一起。除了最下面一层，其它层都会有一个指针指向下一层。这些层是 Docker 内部的实现细节，并且能够在主机的文件系统上访问到。统一文件系统技术能够将不同的层整合成一个文件系统，为这些层提供了一个统一的视角，这样就隐藏了多层的存在，在用户的角度看来，只存在一个文件系统。我们可以在图片的右边看到这个视角的形式。
 
-## 基于“预测”而非“建议”
+您可以在您的主机文件系统上找到有关这些层的文件。需要注意的是，在一个运行中的容器内部，这些层是不可见的。在我的主机上，我发现它们存在于 `/var/lib/docker/overlay2` 目录下。
 
-Google 官方将自动补全功能称之为“预测”，而不是“建议”，为什么呢？其实是有充分理由的。自动补全功能是为了**帮助用户完成他们打算进行的搜索**，而不是建议用户要执行什么搜索。
+### 1.2 镜像分层结构
 
-那么，Google 是如何确定这些“预测”的？其实，Google 会根据趋势搜索 [trends](https://trends.google.com/trends/?geo=US) 给到我们这些“预测”。简单来说，哪个热门、哪个搜索频率高，就更可能推给我们。当然，这也与我们当前所处的位置以及我们的搜索历史相关。
+为什么说是镜像分层结构，因为 Docker 镜像是以层来组织的，可以通过命令 `docker image inspect <image>` 或者 `docker inspect <image>` 来查看镜像包含哪些层。
 
-另外，这些“预测”也会随着我们键入的关键字的变更而更改。例如，当我们把键入的关键字从 `juej` 更改为 `juex` 时，与“掘金”相关的预测会“消失”，同时，与“觉醒”、“决心”相关联的词会出现。
+例如，镜像 busybox ：
 
-![](https://cdn-doocs.oss-cn-shenzhen.aliyuncs.com/gh/doocs/md/images/1648303068169-386a99cb-143b-4ded-a859-1b7a4c4b5bd3.gif)
+```sh
+xcbeyond@xcbeyonddeMacBook-Pro ~ % docker inspect busybox
+[
+    {
+        "Id": "sha256:3c277069c6ae3f3572998e727b973ff7418c3962b9403de4b3a3f8624399b8fa",
+        "RepoTags": [
+            "busybox:latest"
+        ],
+        "RepoDigests": [
+            "busybox@sha256:d2b53584f580310186df7a2055ce3ff83cc0df6caacf1e3489bff8cf5d0af5d8"
+        ],
+        "Parent": "",
+        "Comment": "",
+        "Created": "2022-04-14T00:39:25.923517152Z",
+        "Container": "39aaf4eecc48824531078c316f5b16e97549417e07c8f90b26ae16053111ea57",
+        "ContainerConfig": {
+            "Hostname": "39aaf4eecc48",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "/bin/sh",
+                "-c",
+                "#(nop) ",
+                "CMD [\"sh\"]"
+            ],
+            "Image": "sha256:3289bc85dc0eba79657979661460c7f6f97688ad8a4f93174e0cabdd6b09a365",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": null,
+            "OnBuild": null,
+            "Labels": {}
+        },
+        "DockerVersion": "20.10.12",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "sh"
+            ],
+            "Image": "sha256:3289bc85dc0eba79657979661460c7f6f97688ad8a4f93174e0cabdd6b09a365",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": null,
+            "OnBuild": null,
+            "Labels": null
+        },
+        "Architecture": "arm64",
+        "Variant": "v8",
+        "Os": "linux",
+        "Size": 1411540,
+        "VirtualSize": 1411540,
+        "GraphDriver": {
+            "Data": {
+                "MergedDir": "/var/lib/docker/overlay2/e89181e7cadd3a6ee49f66bae34fed369621a1a5cfbe0003ce4621d0eec020e6/merged",
+                "UpperDir": "/var/lib/docker/overlay2/e89181e7cadd3a6ee49f66bae34fed369621a1a5cfbe0003ce4621d0eec020e6/diff",
+                "WorkDir": "/var/lib/docker/overlay2/e89181e7cadd3a6ee49f66bae34fed369621a1a5cfbe0003ce4621d0eec020e6/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:31a5597e16d3c5adaaf5826162216e256126d2fbf1beaa2b6c45c1822a2b9ca3"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        }
+    }
+]
+```
 
-## 为什么看不到某些联想词？
+其中，RootFS 就是镜像 busybox:latest 的镜像层，只有一层，这层数据是存储在宿主机哪里的呢？动手实践的同学会在上面的输出中看到一个叫做 GraphDriver 的字段内容如下:
 
-如果我们在输入某个关键字时看不到联想词，那么表明 Google 的算法可能检测到：
+```json
+"GraphDriver": {
+            "Data": {
+                "MergedDir": "/var/lib/docker/overlay2/e89181e7cadd3a6ee49f66bae34fed369621a1a5cfbe0003ce4621d0eec020e6/merged",
+                "UpperDir": "/var/lib/docker/overlay2/e89181e7cadd3a6ee49f66bae34fed369621a1a5cfbe0003ce4621d0eec020e6/diff",
+                "WorkDir": "/var/lib/docker/overlay2/e89181e7cadd3a6ee49f66bae34fed369621a1a5cfbe0003ce4621d0eec020e6/work"
+            },
+            "Name": "overlay2"
+        }
+```
 
-- 这个关键字不是热门字词；
-- 搜索的字词太新了，我们可能需要等待几天或几周才能看到联想词；
-- 这是一个侮辱性或敏感字词，这个搜索字词违反了 Google 的相关政策。更加详细的情况，可以了解 [Google 搜索自动补全政策](https://support.google.com/websearch/answer/7368877)。
+GraphDriver 负责镜像本地的管理和存储以及运行中的容器生成镜像等工作，可以将 GraphDriver 理解成镜像管理引擎，我们这里的例子对应的引擎名字是 overlay2（overlay 的优化版本）。除了 overlay 之外，Docker 的 GraphDriver 还支持 btrfs、aufs、devicemapper、vfs 等。
 
-## 为什么会看到某些不当的联想词？
+我们可以看到其中的 Data 包含了多个部分，这个对应 OverlayFS 的镜像组织形式，虽然我们上面的例子中的 busybox 镜像只有一层，但是正常情况下很多镜像都是由多层组成的。
 
-Google 拥有专门设计的系统，可以自动捕获不适当的预测结果而不显示出来。然而，Google 每天需要处理数十亿次搜索，这意味着 Google 每天会显示数十亿甚至上百亿条预测。再好的系统，也可能存在缺陷，不正确的预测也可能随时会出现。
+### 1.3 Dockerfile、镜像、容器间的关系
 
-我们作为 Google 搜索的用户，如果认定某条预测违反了相关的搜索自动补全政策，可以进行举报反馈，点击右下角“**举报不当的联想查询**”并勾选相关选项即可。
+Dockerfile 是软件的原材料，Docker 镜像是软件的交付品，而 Docker 容器则可以认为是软件的运行态。从应用软件的角度来看，Dockerfile、Docker 镜像与 Docker 容器分别代表软件的三个不同阶段，Dockerfile 面向开发，Docker 镜像成为交付标准，Docker 容器则涉及部署与运维，三者缺一不可，合力充当 Docker 体系的基石。
 
-![](https://cdn-doocs.oss-cn-shenzhen.aliyuncs.com/gh/doocs/md/images/1648303098026-cac215dc-42c9-462a-a359-dcfb12ed3234.gif)
+简单来讲，Dockerfile 构建出 Docker镜像，通过 Docker 镜像运行Docker容器。
 
-## 如何实现自动补全算法？
+我们可以从 Docker 容器的角度，来反推三者的关系，如下图：
 
-目前，Google 官方似乎并没有公开搜索自动补全的算法实现，但是业界在这方面已经有了不少研究。
+![Docker 镜像结构](https://xcbeyond.cn/blog/containers/dockerfile-best-practices/docker-image-structure.jpeg)
 
-一个好的自动补全器必须是快速的，并且在用户键入下一个字符后立即更新联想词列表。**自动补全器的核心是一个函数，它接受输入的前缀，并搜索以给定前缀开头的词汇或语句列表**。通常来说，只需要返回少量的数目即可。
+## 2、Dockerfile
 
-接下来，我们先从一个简单且低效的实现开始，并在此基础上逐步构建更高效的方法。
+Dockerfile 是一个用来构建镜像的文本文件，文本内容包含了一条条构建镜像所需的指令和说明，它是构建镜像的关键。
 
-### 词汇表实现
+一个 Docker 镜像包含了很多只读层，每一层都由一个 Dockerfile 指令构成，这些层堆叠在一起，每一层都是前一层变化的增量。例如：
 
-一个**简单粗暴的实现方式**是：顺序查找词汇表，依次检查每个词汇，看它是否以给定的前缀开头。
+```dockerfile
+FROM ubuntu:18.04
+COPY . /app
+RUN make /app
+CMD python /app/app.py
+```
 
-但是，此方法需要将前缀与每个词汇进行匹配检查，若词汇量较少，这种方式可能勉强行得通。但是，如果词汇量规模较大，效率就太低了。
+每条指令都会创建一层：
 
-一个**更好的实现方式是**：让词汇按字典顺序排序。借助二分搜索算法，可以快速搜索有序词汇表中的前缀。由于二分搜索的每一步都会将搜索的范围减半，因此，总的搜索时间与词汇表中单词数量的对数成正比，即时间复杂度是 `O(log N)`。二分搜索的性能很好，但有没有更好的实现呢？当然有，往下看。
+* FROM：从 ubuntu:18.04 Docker 镜像创建了一层，也作为基础镜像层。
+* COPY：从 Docker 客户端的当前目录添加文件。
+* RUN： 执行 make 命令.
+* CMD：指定要在容器中运行的命令。
 
-### 前缀树实现
+上述就是一个简单的 Dockerfile 文件，再通过 `docker build -t` 命令便可直接构建出镜像。
 
-通常来说，许多词汇都以相同的前缀开头，比如 `need`、`nested` 都以 `ne` 开头，`seed`、`speed` 都以 `s` 开头。要是为每个单词分别存储公共前缀似乎很浪费。
+在这里就不过多介绍 Dockerfile 的各个指令的用法，更多更详细的可参考：[Dockerfile reference](https://docs.docker.com/engine/reference/builder/)
 
-![](https://cdn-doocs.oss-cn-shenzhen.aliyuncs.com/gh/doocs/md/images/1648303128008-93cf798d-2662-4eec-8f80-2e07436aebfe.png)
+## 3、Dockerfile 的最佳实践
 
-前缀树是一种利用公共前缀来加速补全速度的数据结构。前缀树在节点树中排列一组单词，单词沿着从根节点到叶子节点的路径存储，树的层次对应于前缀的字母位置。
+本节将列举出一些最佳实践技巧，来帮助我们更好的写好 Dockerfile。
 
-前缀的补全是顺着前缀定义的路径来查找的。例如，在上图的前缀树中，前缀 `ne` 对应于从子节点取左边缘 `N` 和唯一边缘 `E` 的路径。然后可以通过继续遍历从 `E` 节点可以达到的所有叶节点来生成补全列表。在图中，`ne` 的补全可以是两个分支：`-ed` 和 `-sted`。如果在数中找不到由前缀定义的路径，则说明词汇表中不包含以该前缀开头的单词。
+### 3.1 尽可能使用官方镜像作为基础镜像
 
-### 有限状态自动机(DFA)实现
+Docker 镜像是基于基础镜像构建而来，因此选择的基础镜像越恰当，我们要做的底层工作就越少。比如，如果构建一个 Java 应用镜像，选择一个 openjdk 镜像作为基础比选择一个 alpine 镜像更简单。
 
-前缀树可以有效处理公共前缀，但是，对于其他共享词部分，仍会分别存储在每个分支中。比如，后缀 `ed`、`ing`、`tion` 在英文单词中特别常见。在上一个例子中，`e`、`d` 分别存放在了每一个分支上。
+尽可能使用当前的官方镜像作为基础镜像，无论是从镜像大小，还是安全性来讲，都是比较可靠的。
 
-有没有一种方法可以更加节省存储空间呢？有的，那就是 DFA。
+下面的一些镜像，可根据使用场景来选择合适的基础镜像：
 
-<center>
-<img src="https://cdn-doocs.oss-cn-shenzhen.aliyuncs.com/gh/doocs/md/images/1648303158478-66a96e2d-6424-43d6-8cb3-2f7a39f960b8.gif" style="width: 50%;"></center>
+| 镜像名称 | 大小 | 说明和使用场景 |
+| --- | --- | --- |
+| [busybox](https://hub.docker.com/_/busybox) | 754.7 KB | 一个超级简化版嵌入式 Linux 系统。临时测试用。|
+| [alpine](https://hub.docker.com/_/alpine) | 2.68 MB | 一个面向安全的、轻量级的Linux系统，基于musl libc 和 busybox。主要用于测试，也可用于生产环境。 |
+| [centos](https://hub.docker.com/_/centos) | 79.65 MB | 主要用于生产环境，支持CentOS/Red Hat，常用于追求稳定性的企业应用。|
+| [ubuntu](https://hub.docker.com/_/ubuntu) | 29.01 MB | 主要用于生产环境，常用于人工智能计算和企业应用。 |
+| [debian](https://hub.docker.com/_/debian) | 52.4 MB | 主要用于生产环境。 |
+| [openjdk](https://hub.docker.com/_/openjdk) | 161.02 MB | 主要用于  Java 应用。|
 
-在上面的例子中，单词 `need`、`nested`、`seed` 和 `speed` 仅由 9 个节点组成，而上一张图中的前缀树包含了 17 个节点。
+### 3.2 减少 Dockerfile 指令的行数
 
-可以看出，最小化前缀树 DFA 可以在很大程度上减少数据结构的大小。即使词汇量很大，最小化 DFA 通常也适合在内存中存储，避免昂贵的磁盘访问是实现快速自动补全的关键。
+Dockerfile 中每一行指令都代表了一层，多一层都可能带来镜像大小变大。
 
-### 一些扩展
+因此，在实际编写 Dockerfile 时，可以将同类操作放在一起来避免多行指令，更有助于促进层缓存。比如将多条 RUN 操作进行合并，并用 `;\` 或者 `&&` 连接在一起。
 
-上面介绍了如何利用合理的数据结构实现基本的自动补全功能。这些数据结构可以通过多种方式进行扩展，从而改善用户体验。
+（减少指令行数，并不意味着越少越好，需要从改动频繁程度来决定是否合并为一条指令。）
 
-通常，满足特定前缀的词汇可能很多，而用户界面上能够显示的却不多，我们更希望能显示最常搜索或者最有价值的词汇。这通常可以通过为词汇表中的每个单词增加一个代表单词值的**权重** `weight`，并且按照权重高低来排序自动补全列表。
+例如下面的 Dockerfile，会执行多条命令，通过 `;\` 连接将其用一条 RUN 指令来完成。
 
-- 对于排序后的词汇表来说，在词汇表每个元素上增加 `weight` 属性并不难；
-- 对于前缀树来说，将 `weight` 存储在叶子节点中，也是很简单的一个实现；
-- 对于 `DFA` 来说，则较为复杂。因为一个叶子节点可以通过多条路径到达。一种解决方案是将权重关联到路径而不是叶子节点。
+```dockerfile
+FROM node:6.14
+LABEL MAINTAINER xcbeyond
 
-目前有不少开源库都提供了这个功能，比如主流的搜索引擎框架 [Elasticsearch](https://www.elastic.co/products/elasticsearch)、[Solr](https://lucene.apache.org/solr/) 等，基于此，我们可以实现高效而强大的自动补全功能。
+RUN npm install gitbook-cli -g;\
+   gitbook -V; \
+   npm install svgexport -g --unsafe-perm
 
-#### 推荐阅读
+CMD ["/bin/sh"]
+```
 
-- [阿里又一个 20k+ stars 开源项目诞生，恭喜 fastjson！](https://mp.weixin.qq.com/s/RNKDCK2KoyeuMeEs6GUrow)
-- [刷掉 90% 候选人的互联网大厂海量数据面试题（附题解 + 方法总结）](https://mp.weixin.qq.com/s/rjGqxUvrEqJNlo09GrT1Dw)
-- [好用！期待已久的文本块功能究竟如何在 Java 13 中发挥作用？](https://mp.weixin.qq.com/s/kalGv5T8AZGxTnLHr2wDsA)
-- [2019 GitHub 开源贡献排行榜新鲜出炉！微软谷歌领头，阿里跻身前 12！](https://mp.weixin.qq.com/s/_q812aGD1b9QvZ2WFI0Qgw)
+### 3.3 改动不频繁的内容往前放
+
+对于 Docker 镜像而言，每一层都代表了 Dockerfile 中的一行指令，每一层都是前一层变化的增量。例如一个 Docker 镜像有ABCD 四层，B 层修改了，那么 BCD 都会变化。
+
+因此，在编写 Dockerfile 时，尽量将改动不频繁的内容往前放，即：将系统依赖往前写，因为像 apt, yum 这些安装的东西，是很少修改的。然后写应用的库依赖，比如 pip install，最后 copy 应用,编译应用。
+
+例如下面这个 Dockerfile，就会在每次代码改变的时候都重新 Build 大部分层，即使只改了一个页面的标题。
+
+```dockerfile
+FROM python:3.7-buster
+ 
+# copy source
+RUN mkdir -p /opt/app
+COPY myapp /opt/app/myapp/
+WORKDIR /opt/app
+
+# install dependencies nginx
+RUN apt-get update && apt-get install nginx
+RUN pip install -r requirements.txt
+RUN chown -R www-data:www-data /opt/app
+ 
+# start server
+EXPOSE 8020
+STOPSIGNAL SIGTERM
+CMD ["/opt/app/start-server.sh"]
+```
+
+我们可以改成，先安装 Nginx，再单独 copy requirements.txt，然后安装 pip 依赖，最后 copy 应用代码。
+
+```dockerfile
+FROM python:3.7-buster
+ 
+# install dependencies nginx
+RUN apt-get update && apt-get install nginx
+COPY myapp/requirements.txt /opt/app/myapp/requirements.txt
+RUN pip install -r requirements.txt
+ 
+# copy source
+RUN mkdir -p /opt/app
+COPY myapp /opt/app/myapp/
+WORKDIR /opt/app
+ 
+RUN chown -R www-data:www-data /opt/app
+ 
+# start server
+EXPOSE 8020
+STOPSIGNAL SIGTERM
+CMD ["/opt/app/start-server.sh"]
+```
+
+### 3.4 编译和运行需分离
+
+我们在编译应用时很多时候会用到很多编译工具、编译环境，例如：node、Golang 等，但是编译后，运行时却不再需要。这样的编译环境往往占用很大，使得镜像额外变大。
+
+因此，可以将应用事先在某个固定编译环境编译完成，得到编译后的二进制文件，再将其 COPY 到镜像中即可，这样镜像中只包含应用的运行二进制文件。
+
+例如下面这个 Dockerfile，将 Golang 程序编译好的二进制文件 app,构建到镜像中：
+
+```dockerfile
+FROM alpine:latest
+
+LABEL maintainer xcbeyond
+
+WORKDIR /app
+
+COPY app /app
+
+CMD ["/app/app"]
+```
+
+### 3.5 删除不需要的依赖项
+
+Docker 镜像应该尽可能小。在编写 Dockerfile 时仅包含基本内容，不要引入无关内容，从而使得镜像大小更小、构建速度更快，并且减少受攻击的可能面。
+
+镜像更小，也更利于存放到镜像仓库，减少网络带宽开销。
+
+不要安装应用程序实际不使用的任何包、库。
+
+### 3.6 避免凭证构建到镜像
+
+这是最常见和最危险的 Dockerfile 问题之一。在构建镜像过程中，复制配置文件可能很诱人，但你切记可能会引入很大的安全隐患。
+
+在 Dockerfile 中通过 COPY 指令将任何配置文件内容都复制到你的镜像，并且任何可以访问它的人都可以访问它。如果这个配置文件中，无意间包含了数据库密码配置，那么你就彻底将这些密码暴露给了所有使用该镜像的所有人。
+
+为了避免这类问题，必须将配置密钥、敏感数据只能提供给具体的容器，而不是提供给构建它们的镜像。可使用环境变量、挂载卷等方式在容器启动时注入数据。这样就避免了意外的信息暴露，并确保你的镜像可跨环境重复使用。
 
 ---
 
-欢迎关注我的公众号“**Doocs**”，原创技术文章第一时间推送。
+参考文章：
 
-<center>
-    <img src="https://cdn-doocs.oss-cn-shenzhen.aliyuncs.com/gh/doocs/md/images/1648303220922-7e14aefa-816e-44c1-8604-ade709ca1c69.png" style="width: 100px;">
-</center>
+1. [如何选择Docker基础镜像](https://blog.csdn.net/nklinsirui/article/details/80967677)
+2. [Top 20 Dockerfile best practices](https://sysdig.com/blog/dockerfile-best-practices/)
+3. [Best practices for writing Dockerfiles](https://docs.docker.com/develop/develop-images/dockerfile_best-practices/)

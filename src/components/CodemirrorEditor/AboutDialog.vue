@@ -9,26 +9,23 @@
   >
     <div style="text-align: center">
       <h3>一款高度简洁的微信 Markdown 编辑器</h3>
-      <p>扫码关注公众号 Doocs，原创技术文章第一时间推送！</p>
-      <img
-        src="https://cdn-doocs.oss-cn-shenzhen.aliyuncs.com/gh/doocs/md/images/1648303220922-7e14aefa-816e-44c1-8604-ade709ca1c69.png"
-        style="width: 40%"
-      />
+      <p>扫码关注公众号 程序猿技术大咖，原创技术文章第一时间推送！</p>
+      <img src="https://xcbeyond.cn/about/cxyjsdk.jpg" style="width: 40%" />
     </div>
     <template slot="footer">
       <el-button
         type="primary"
-        @click="onRedirect('https://github.com/doocs/md')"
+        @click="onRedirect('https://xcbeyond.cn')"
         plain
       >
-        GitHub 仓库
+        xcbeyond.cn
       </el-button>
       <el-button
         type="primary"
-        @click="onRedirect('https://gitee.com/doocs/md')"
+        @click="onRedirect('https://mp.weixin.qq.com/s/GZebuH-SDbbv-nGRtuc4AQ')"
         plain
       >
-        Gitee 仓库
+        程序猿技术大咖
       </el-button>
     </template>
   </el-dialog>
